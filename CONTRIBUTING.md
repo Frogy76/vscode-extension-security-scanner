@@ -29,16 +29,18 @@ Since this is a security tool, all contributions must follow strict security gui
 ## ?? Types of Contributions Needed
 
 ### High Priority
-- **New compromise indicators** from recent attacks
+- **New compromise indicators** from recent attacks with specific version numbers
 - **Performance optimizations** for large extension collections
 - **Enhanced detection algorithms** for obfuscated malware
+- **Version range analysis** improvements (better handling of ^, ~, >= patterns)
 - **Cross-platform support** (Linux/macOS versions)
 
 ### Medium Priority
 - **Better reporting formats** (JSON, HTML output)
 - **Integration capabilities** (CI/CD pipeline support)
-- **Configuration options** (custom package lists)
+- **Configuration options** (custom package lists, version tolerance settings)
 - **Logging improvements** for audit trails
+- **Historical version tracking** for compromise timeline analysis
 
 ### Low Priority
 - **UI improvements** (better console output)
@@ -86,9 +88,11 @@ Parameter description
 - Test performance with large extension collections
 
 ### Security Testing
-- Verify no false negatives with known compromised packages
+- Verify no false negatives with known compromised packages and versions
+- Test version comparison accuracy with edge cases (pre-release, build metadata)
 - Test resistance to evasion techniques
 - Validate output sanitization
+- Test version range handling (^1.2.3, ~1.2.3, >=1.2.3, etc.)
 
 ## ?? Reporting Issues
 

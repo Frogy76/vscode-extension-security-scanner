@@ -37,28 +37,31 @@ param(
     [switch]$ShowNetworkDetails
 )
 
-# Compromised npm packages from September 8, 2025 attack
-$CompromisedPackages = @(
-    'ansi-regex',
-    'ansi-styles', 
-    'backslash',
-    'chalk',
-    'chalk-template',
-    'color-convert',
-    'color-name',
-    'color-string',
-    'debug',
-    'error-ex',
-    'has-ansi',
-    'is-arrayish',
-    'simple-swizzle',
-    'slice-ansi',
-    'strip-ansi',
-    'supports-color',
-    'supports-hyperlinks',
-    'wrap-ansi',
-    'proto-tinker-wc'
-)
+# Compromised npm packages from September 8, 2025 attack with specific versions
+$CompromisedPackages = @{
+    'ansi-regex' = '6.2.1'
+    'ansi-styles' = '6.2.2'
+    'backslash' = '0.2.1'
+    'chalk' = '5.6.1'
+    'chalk-template' = '1.1.1'
+    'color-convert' = '3.1.1'
+    'color-name' = '2.0.1'
+    'color-string' = '2.1.1'
+    'debug' = '4.4.2'
+    'error-ex' = '1.3.3'
+    'has-ansi' = '6.0.1'
+    'is-arrayish' = '0.3.3'
+    'simple-swizzle' = '0.2.3'
+    'slice-ansi' = '7.1.1'
+    'strip-ansi' = '7.1.1'
+    'supports-color' = '10.2.1'
+    'supports-hyperlinks' = '4.1.1'
+    'wrap-ansi' = '9.0.1'
+    'proto-tinker-wc' = '1.8.7'
+}
+
+# Legacy list for backward compatibility
+$CompromisedPackageNames = $CompromisedPackages.Keys
 
 # Colors for output
 $Colors = @{
@@ -75,6 +78,47 @@ function Write-ColorOutput {
         [string]$Color = 'White'
     )
     Write-Host $Text -ForegroundColor $Colors[$Color]
+}
+
+function Compare-PackageVersion {
+    param(
+        [string]$InstalledVersion,
+        [string]$CompromisedVersion
+    )
+    
+    # Simple version comparison - returns true if installed version matches compromised version
+    try {
+        if ([string]::IsNullOrEmpty($InstalledVersion) -or [string]::IsNullOrEmpty($CompromisedVersion)) {
+            return $false
+        }
+        
+        # Clean version strings (remove leading 'v', '^', '~', etc.)
+        $CleanInstalled = $InstalledVersion -replace '^[v\^~>=<]+', ''
+        $CleanCompromised = $CompromisedVersion -replace '^[v\^~>=<]+', ''
+        
+        # Split version parts
+        $InstalledParts = $CleanInstalled.Split('.')
+        $CompromisedParts = $CleanCompromised.Split('.')
+        
+        # Compare major.minor.patch
+        for ($i = 0; $i -lt [Math]::Min($InstalledParts.Length, $CompromisedParts.Length); $i++) {
+            $InstalledPart = 0
+            $CompromisedPart = 0
+            
+            [int]::TryParse($InstalledParts[$i], [ref]$InstalledPart) | Out-Null
+            [int]::TryParse($CompromisedParts[$i], [ref]$CompromisedPart) | Out-Null
+            
+            if ($InstalledPart -ne $CompromisedPart) {
+                return $false
+            }
+        }
+        
+        return $true
+    }
+    catch {
+        # If version comparison fails, fall back to string comparison
+        return $InstalledVersion -eq $CompromisedVersion
+    }
 }
 
 function Get-VSCodeExtensionsPath {
@@ -177,14 +221,51 @@ function Get-ExtensionInfo {
             $ExtensionInfo.DevDependencies = $PackageJson.devDependencies.PSObject.Properties.Name
         }
         
-        # Check for compromised packages - IMPORTANT CORRECTION
-        $AllDeps = $ExtensionInfo.Dependencies + $ExtensionInfo.DevDependencies
+        # Check for compromised packages with version verification
         $FoundCompromised = @()
-        foreach ($dep in $AllDeps) {
-            if ($dep -in $CompromisedPackages) {
-                $FoundCompromised += $dep
+        
+        # Check dependencies with version information
+        if ($PackageJson.dependencies) {
+            foreach ($depName in $PackageJson.dependencies.PSObject.Properties.Name) {
+                if ($CompromisedPackages.ContainsKey($depName)) {
+                    $installedVersion = $PackageJson.dependencies.$depName
+                    $compromisedVersion = $CompromisedPackages[$depName]
+                    
+                    $versionMatch = Compare-PackageVersion $installedVersion $compromisedVersion
+                    
+                    $compromisedInfo = [PSCustomObject]@{
+                        Name = $depName
+                        InstalledVersion = $installedVersion
+                        CompromisedVersion = $compromisedVersion
+                        ExactMatch = $versionMatch
+                        Type = "dependency"
+                    }
+                    $FoundCompromised += $compromisedInfo
+                }
             }
         }
+        
+        # Check devDependencies with version information
+        if ($PackageJson.devDependencies) {
+            foreach ($depName in $PackageJson.devDependencies.PSObject.Properties.Name) {
+                if ($CompromisedPackages.ContainsKey($depName)) {
+                    $installedVersion = $PackageJson.devDependencies.$depName
+                    $compromisedVersion = $CompromisedPackages[$depName]
+                    
+                    $versionMatch = Compare-PackageVersion $installedVersion $compromisedVersion
+                    
+                    $compromisedInfo = [PSCustomObject]@{
+                        Name = $depName
+                        InstalledVersion = $installedVersion
+                        CompromisedVersion = $compromisedVersion
+                        ExactMatch = $versionMatch
+                        Type = "devDependency"
+                    }
+                    $FoundCompromised += $compromisedInfo
+                }
+            }
+        }
+        
         $ExtensionInfo.CompromisedPackages = $FoundCompromised
         
         # Risk assessment
@@ -205,7 +286,7 @@ function Get-ExtensionInfo {
 function Scan-NodeModulesForCompromised {
     param(
         [string]$NodeModulesPath,
-        [array]$CompromisedPackages
+        [hashtable]$CompromisedPackagesHash
     )
     
     $FoundPackages = @()
@@ -214,25 +295,32 @@ function Scan-NodeModulesForCompromised {
         return $FoundPackages
     }
     
-    foreach ($Package in $CompromisedPackages) {
-        $PackagePath = Join-Path $NodeModulesPath $Package
+    foreach ($PackageName in $CompromisedPackagesHash.Keys) {
+        $PackagePath = Join-Path $NodeModulesPath $PackageName
         if (Test-Path $PackagePath) {
             $PackageJsonPath = Join-Path $PackagePath "package.json"
             if (Test-Path $PackageJsonPath) {
                 try {
                     $PackageJson = Get-Content $PackageJsonPath -Raw | ConvertFrom-Json
-                    $PackageVersion = Get-SafeValue $PackageJson.version
+                    $InstalledVersion = Get-SafeValue $PackageJson.version
+                    $CompromisedVersion = $CompromisedPackagesHash[$PackageName]
+                    
+                    $VersionMatch = Compare-PackageVersion $InstalledVersion $CompromisedVersion
                     
                     $FoundPackages += [PSCustomObject]@{
-                        Name = $Package
-                        Version = $PackageVersion
+                        Name = $PackageName
+                        InstalledVersion = $InstalledVersion
+                        CompromisedVersion = $CompromisedVersion
+                        ExactMatch = $VersionMatch
                         Path = $PackagePath
                     }
                 }
                 catch {
                     $FoundPackages += [PSCustomObject]@{
-                        Name = $Package
-                        Version = "Error reading"
+                        Name = $PackageName
+                        InstalledVersion = "Error reading"
+                        CompromisedVersion = $CompromisedPackagesHash[$PackageName]
+                        ExactMatch = $false
                         Path = $PackagePath
                     }
                 }
@@ -280,7 +368,18 @@ function Show-ScanResults {
             Write-ColorOutput "`n?? $($Ext.Name) by $($Ext.Publisher)" Critical
             Write-ColorOutput "   Version: $($Ext.Version)" Info
             Write-ColorOutput "   Path: $($Ext.Path)" Info
-            Write-ColorOutput "   ??  Compromised packages: $($Ext.CompromisedPackages -join ', ')" Critical
+            
+            # Show detailed compromised package information
+            Write-ColorOutput "   ??  Compromised packages found:" Critical
+            foreach ($CompromisedPkg in $Ext.CompromisedPackages) {
+                $Status = if ($CompromisedPkg.ExactMatch) { "EXACT MATCH ??!" } else { "Version differs" }
+                $StatusColor = if ($CompromisedPkg.ExactMatch) { "Critical" } else { "Warning" }
+                
+                Write-ColorOutput "      - $($CompromisedPkg.Name)" Critical
+                Write-ColorOutput "        Installed: $($CompromisedPkg.InstalledVersion) | Compromised: $($CompromisedPkg.CompromisedVersion)" Info
+                Write-ColorOutput "        Status: $Status" $StatusColor
+                Write-ColorOutput "        Type: $($CompromisedPkg.Type)" Info
+            }
             
             if ($Detailed) {
                 Write-ColorOutput "   ?? All Dependencies: $($Ext.Dependencies -join ', ')" Info
@@ -293,7 +392,12 @@ function Show-ScanResults {
                 if ($FoundInNodeModules.Count -gt 0) {
                     Write-ColorOutput "   ?? Found in node_modules:" Warning
                     foreach ($Found in $FoundInNodeModules) {
-                        Write-ColorOutput "      - $($Found.Name) v$($Found.Version)" Critical
+                        $NodeStatus = if ($Found.ExactMatch) { "EXACT MATCH ??!" } else { "Version differs" }
+                        $NodeStatusColor = if ($Found.ExactMatch) { "Critical" } else { "Warning" }
+                        
+                        Write-ColorOutput "      - $($Found.Name)" Critical
+                        Write-ColorOutput "        Installed: $($Found.InstalledVersion) | Compromised: $($Found.CompromisedVersion)" Info
+                        Write-ColorOutput "        Status: $NodeStatus" $NodeStatusColor
                     }
                 }
             }
@@ -431,12 +535,21 @@ function Export-ResultsToCSV {
     )
     
     $ExportData = foreach ($Result in $Results) {
+        # Format compromised packages with version info
+        $CompromisedDetails = @()
+        foreach ($CompromisedPkg in $Result.CompromisedPackages) {
+            $VersionStatus = if ($CompromisedPkg.ExactMatch) { "EXACT_MATCH" } else { "VERSION_DIFFERS" }
+            $CompromisedDetails += "$($CompromisedPkg.Name):$($CompromisedPkg.InstalledVersion)->$($CompromisedPkg.CompromisedVersion):$VersionStatus"
+        }
+        
         [PSCustomObject]@{
             Name = $Result.Name
             Publisher = $Result.Publisher
             Version = $Result.Version
             RiskLevel = $Result.RiskLevel
-            CompromisedPackages = ($Result.CompromisedPackages -join ';')
+            CompromisedPackagesCount = $Result.CompromisedPackages.Count
+            CompromisedPackagesDetails = ($CompromisedDetails -join ';')
+            ExactMatchCount = ($Result.CompromisedPackages | Where-Object { $_.ExactMatch }).Count
             DependencyCount = $Result.Dependencies.Count + $Result.DevDependencies.Count
             HasNodeModules = $Result.HasNodeModules
             Path = $Result.Path
@@ -521,7 +634,15 @@ if ($CriticalCount -gt 0) {
     # Show affected extensions again
     Write-ColorOutput "`nAffected extensions:" Critical
     $AllResults | Where-Object { $_.RiskLevel -eq "Critical" } | ForEach-Object {
-        Write-ColorOutput "  - $($_.Name) ($($_.Publisher)): $($_.CompromisedPackages -join ', ')" Critical
+        $PackageNames = ($_.CompromisedPackages | ForEach-Object { $_.Name }) -join ', '
+        $ExactMatches = ($_.CompromisedPackages | Where-Object { $_.ExactMatch }).Count
+        $TotalCompromised = $_.CompromisedPackages.Count
+        
+        if ($ExactMatches -gt 0) {
+            Write-ColorOutput "  - $($_.Name) ($($_.Publisher)): $PackageNames [$ExactMatches/$TotalCompromised EXACT MATCHES]" Critical
+        } else {
+            Write-ColorOutput "  - $($_.Name) ($($_.Publisher)): $PackageNames [VERSION DIFFERS]" Warning
+        }
     }
     
     exit 2

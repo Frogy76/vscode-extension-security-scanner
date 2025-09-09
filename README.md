@@ -11,18 +11,41 @@ This scanner detects VS Code extensions affected by the major npm supply chain a
 - **Scans all installed VS Code extensions** for compromised npm packages
 - **Identifies critical security risks** in your development environment  
 - **Detects cryptocurrency wallet targeting malware** in extensions
+- **Performs precise version matching** against specific compromised versions
+- **Distinguishes between exact matches and version differences** for better risk assessment
 - **Provides immediate remediation steps** for compromised systems
-- **Exports detailed reports** for security auditing
+- **Exports detailed reports** with version information for security auditing
 - **Performs system-wide security checks** for indicators of compromise
 
 ## ?? Compromised Packages Detected
 
-The scanner checks for these compromised npm packages:
+The scanner checks for these compromised npm packages with their specific malicious versions:
 
-- `ansi-regex`, `ansi-styles`, `backslash`, `chalk`, `chalk-template`
-- `color-convert`, `color-name`, `color-string`, `debug`, `error-ex`
-- `has-ansi`, `is-arrayish`, `simple-swizzle`, `slice-ansi`, `strip-ansi`
-- `supports-color`, `supports-hyperlinks`, `wrap-ansi`, `proto-tinker-wc`
+| Package Name | Compromised Version |
+|--------------|-------------------|
+| `ansi-regex` | 6.2.1 |
+| `ansi-styles` | 6.2.2 |
+| `backslash` | 0.2.1 |
+| `chalk` | 5.6.1 |
+| `chalk-template` | 1.1.1 |
+| `color-convert` | 3.1.1 |
+| `color-name` | 2.0.1 |
+| `color-string` | 2.1.1 |
+| `debug` | 4.4.2 |
+| `error-ex` | 1.3.3 |
+| `has-ansi` | 6.0.1 |
+| `is-arrayish` | 0.3.3 |
+| `simple-swizzle` | 0.2.3 |
+| `slice-ansi` | 7.1.1 |
+| `strip-ansi` | 7.1.1 |
+| `supports-color` | 10.2.1 |
+| `supports-hyperlinks` | 4.1.1 |
+| `wrap-ansi` | 9.0.1 |
+| `proto-tinker-wc` | 1.8.7 |
+
+**⚠️ Version Matching**: The scanner performs precise version comparison to distinguish between:
+- **🔴 EXACT MATCH**: Installed version matches the compromised version exactly (CRITICAL RISK)
+- **🟡 VERSION DIFFERS**: Package is present but version differs from the compromised one (MEDIUM RISK)
 
 ## ?? Quick Start
 
@@ -90,19 +113,41 @@ Scanned extensions: 47
 ?? LOW: 40 Extensions
 
 === ?? CRITICAL EXTENSIONS (COMPROMISED PACKAGES FOUND) ===
-?? Extension Name by Publisher
-   ??  Compromised packages: chalk, ansi-styles
+?? GitHub Copilot by GitHub
+   Version: 1.364.0
+   Path: C:\Users\user\.vscode\extensions\github.copilot-1.364.0
+   ??  Compromised packages found:
+      - chalk
+        Installed: ^5.4.1 | Compromised: 5.6.1
+        Status: Version differs
+        Type: devDependency
+
+?? WARNING: 1 critical extension(s) found!
+Affected extensions:
+  - GitHub Copilot (GitHub): chalk [VERSION DIFFERS]
 ```
+
+### Version Status Indicators:
+- **🔴 EXACT MATCH**: The installed version exactly matches the compromised version
+- **🟡 VERSION DIFFERS**: The package is present but the version is different from the compromised one
+- **📊 Export Data**: CSV exports include detailed version comparison data
 
 ## ?? Technical Details
 
 ### How It Works:
 1. **Locates VS Code extensions** in standard and custom directories
-2. **Parses package.json files** to extract dependencies
-3. **Cross-references dependencies** against known compromised packages
-4. **Scans node_modules** for actual installed packages
-5. **Performs system checks** for malware indicators
-6. **Generates comprehensive reports** with risk assessments
+2. **Parses package.json files** to extract dependencies with version information
+3. **Cross-references dependencies** against known compromised packages and their specific versions
+4. **Performs precise version matching** using semantic version comparison
+5. **Scans node_modules** for actual installed packages with version verification
+6. **Performs system checks** for malware indicators
+7. **Generates comprehensive reports** with detailed version analysis and risk assessments
+
+### Version Comparison Logic:
+- **Exact Match Detection**: Compares semantic versions (major.minor.patch)
+- **Range Handling**: Processes version ranges (^, ~, >=, etc.) 
+- **Fallback Comparison**: Uses string matching when version parsing fails
+- **Dual Verification**: Checks both package.json declarations and physically installed packages
 
 ### Supported VS Code Versions:
 - VS Code (Stable)
